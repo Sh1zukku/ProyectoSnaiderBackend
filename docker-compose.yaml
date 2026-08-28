@@ -1,0 +1,33 @@
+services:
+  web:
+    build: .
+    container_name: snaider_app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./snaiderbackend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+        restart: true
+    env_file:
+      - .env
+  db:
+    image: postgres:17
+    container_name: snaider_db
+    volumes:
+      - snaider_db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:  ${POSTGRES_DB}
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+
+volumes:
+  snaider_db:
