@@ -138,8 +138,6 @@ La API queda disponible en:
 http://localhost:8000
 ```
 
-Si el proyecto tiene rutas específicas, se acceden en función de la configuración de `urls.py`.
+El proyecto tiene rutas específicas, se acceden en función de la configuración de `urls.py`.
 
----
 
-Si querés, después te puedo armar también un `README` más formal con badges, descripción del proyecto y endpoints documentados.
