@@ -16,9 +16,13 @@ load_dotenv(BASE_DIR / '.env', override=True)
 SECRET_KEY = 'django-insecure-$x8p0o188!$d_evf%woc6_9dbqotxxpsxtw^tjxyq$8hvbi0tv'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    'proyectosnaiderbackend.onrender.com',
+    'localhost',
+    '127.0.0.1',
+]
 
 
 # Application definition
