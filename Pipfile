@@ -9,6 +9,7 @@ psycopg = {extras = ["binary"], version = "*"}
 djangorestframework = "*"
 djangorestframework-simplejwt = "*"
 django-cors-headers = "*"
+python-dotenv = "*"
 
 [dev-packages]
 djangorestframework-stubs = "*"

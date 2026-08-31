@@ -1,10 +1,12 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+from dotenv import load_dotenv
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+load_dotenv(BASE_DIR / '.env', override=True)
 
 
 # Quick-start development settings - unsuitable for production
@@ -71,11 +73,14 @@ WSGI_APPLICATION = 'snaiderbackend.wsgi.application'
 DATABASES: dict[str, dict[str, object]] = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ['POSTGRES_DB'],
-        'USER': os.environ['POSTGRES_USER'],
-        'PASSWORD': os.environ['POSTGRES_PASSWORD'],
-        'HOST': os.environ['DB_HOST'],
-        'PORT': os.environ['DB_PORT'],
+        'NAME': os.getenv('POSTGRES_DB'),
+        'USER': os.getenv('POSTGRES_USER'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT', '5432'),
+        'OPTIONS': {
+            'sslmode': os.getenv('DB_SSLMODE', 'require'),
+        },
     }
 }
 

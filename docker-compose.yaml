@@ -6,13 +6,22 @@ services:
       - "8000:8000"
     volumes:
       - ./snaiderbackend:/app
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_SSLMODE: ${DB_SSLMODE}
     depends_on:
       db:
         condition: service_healthy
-        restart: true
-    env_file:
-      - .env
+        required: false
+
   db:
+    profiles: ["local"]
     image: postgres:17
     container_name: snaider_db
     volumes:
@@ -20,14 +29,13 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB:  ${POSTGRES_DB}
+      POSTGRES_DB: ${POSTGRES_DB}
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
       interval: 1m30s
       timeout: 30s
       retries: 5
       start_period: 30s
-
 
 volumes:
   snaider_db:
