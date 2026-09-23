@@ -1,6 +1,10 @@
+import csv
 import re
+import secrets
 from datetime import datetime
+from io import StringIO
 from typing import Any, BinaryIO, cast
+from django.contrib.auth.hashers import make_password
 from django.db import transaction
 from django.utils.timezone import get_current_timezone, make_aware
 from .models import Client, Shipment
@@ -27,6 +31,21 @@ OBSERVATION_CORRECTIONS = {
 }
 
 
+def generate_client_password() -> str:
+    return secrets.token_urlsafe(9)
+
+
+def build_credentials_csv(accounts: list[dict[str, str]]) -> str:
+    output = StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=["dni_cuit", "name", "password"],
+    )
+    writer.writeheader()
+    writer.writerows(accounts)
+    return output.getvalue()
+
+
 def process_shipments_txt(file_obj: BinaryIO) -> dict[str, Any]:
     """
     Procesa un archivo TXT cargado y guarda/actualiza los clientes y envíos en la BD.
@@ -36,6 +55,7 @@ def process_shipments_txt(file_obj: BinaryIO) -> dict[str, Any]:
     created_count = 0
     updated_count = 0
     errors: list[str] = []
+    new_accounts: list[dict[str, str]] = []
 
     with transaction.atomic():
         for line_num, line in enumerate(lines, start=1):
@@ -71,36 +91,51 @@ def process_shipments_txt(file_obj: BinaryIO) -> dict[str, Any]:
                 received_dt = make_aware(naive_dt, get_current_timezone())
 
                 # 1. Buscar o Crear el Cliente
-                client, _ = Client.objects.get_or_create(
+                client_password = generate_client_password()
+                client, client_created = Client.objects.get_or_create(
                     dni_cuit=dni_cuit,
-                    defaults={'name': recipient_name}
+                    defaults={
+                        'name': recipient_name,
+                        'password_hash': make_password(client_password),
+                    }
                 )
-                # Actualizar el nombre si cambió
+
+                if client_created:
+                    new_accounts.append({
+                        "dni_cuit": dni_cuit,
+                        "name": recipient_name,
+                        "password": client_password,
+                    })
+
+                # 2. Ignorar el registro solo si coinciden remito, cliente y fecha.
+                duplicate = Shipment.objects.filter(
+                    remito_number=remito_num,
+                    recipient=client,
+                    received_datetime__date=received_dt.date(),
+                ).exists()
+
+                if duplicate:
+                    continue
+
+                # Actualizar el nombre solo cuando la fila genera un envío nuevo.
                 if cast(Any, client).name != recipient_name:
                     client.name = recipient_name
                     client.save()
 
-                # 2. Crear o Actualizar el Shipment
-                _, created = Shipment.objects.update_or_create(
+                Shipment.objects.create(
                     remito_number=remito_num,
-                    defaults={
-                        'sender': sender,
-                        'recipient': client,
-                        'deposit_number': deposit,
-                        'packages': packages,
-                        'weight_kg': weight,
-                        'declared_value': declared_val,
-                        'value_type': value_type,
-                        'received_datetime': received_dt,
-                        'logistics_id': data["logistics"],
-                        'observations': observations,
-                    }
+                    sender=sender,
+                    recipient=client,
+                    deposit_number=deposit,
+                    packages=packages,
+                    weight_kg=weight,
+                    declared_value=declared_val,
+                    value_type=value_type,
+                    received_datetime=received_dt,
+                    logistics_id=data["logistics"],
+                    observations=observations,
                 )
-
-                if created:
-                    created_count += 1
-                else:
-                    updated_count += 1
+                created_count += 1
 
             except Exception as e:
                 errors.append(f"Línea {line_num}: Error procesando datos - {str(e)}")
@@ -108,5 +143,7 @@ def process_shipments_txt(file_obj: BinaryIO) -> dict[str, Any]:
     return {
         "created": created_count,
         "updated": updated_count,
-        "errors": errors
+        "errors": errors,
+        "new_accounts": new_accounts,
+        "credentials_csv": build_credentials_csv(new_accounts),
     }

@@ -8,6 +8,34 @@ from .services import process_shipments_txt
 
 
 class ProcessShipmentsTxtTests(TestCase):
+	def test_ignores_only_same_remito_client_and_date(self):
+		content = (
+			"10001 REMITENTE                    DESTINATARIO UNO            "
+			"06 RESISTENCIA          1      1.00       100.00 N                    "
+			"                    20/08/2026 10:00  1  24349012\n"
+			"10001 REMITENTE                    DESTINATARIO UNO            "
+			"06 RESISTENCIA          2      2.00       200.00 N                    "
+			"                    20/08/2026 11:00  1  24349012\n"
+			"10001 REMITENTE                    DESTINATARIO DOS            "
+			"06 RESISTENCIA          3      3.00       300.00 N                    "
+			"                    20/08/2026 12:00  1  23452342\n"
+			"10001 REMITENTE                    DESTINATARIO UNO            "
+			"06 RESISTENCIA          4      4.00       400.00 N                    "
+			"                    21/08/2026 10:00  1  24349012"
+		).encode("utf-8")
+
+		result = process_shipments_txt(BytesIO(content))
+
+		self.assertEqual(result["created"], 3)
+		self.assertEqual(result["updated"], 0)
+		self.assertEqual(result["errors"], [])
+		self.assertEqual(len(result["new_accounts"]), 2)
+		self.assertEqual(Shipment.objects.count(), 3)
+		self.assertEqual(
+			set(Shipment.objects.values_list("recipient__dni_cuit", flat=True)),
+			{"24349012", "23452342"},
+		)
+
 	def test_processes_fixed_width_lines_and_preserves_all_fields(self):
 		content = (
 			"          38503 ARGENTAGRO S.R.L.         AGRO CHACO SRL            "
@@ -23,7 +51,10 @@ class ProcessShipmentsTxtTests(TestCase):
 
 		result = process_shipments_txt(BytesIO(content))
 
-		self.assertEqual(result, {"created": 3, "updated": 0, "errors": []})
+		self.assertEqual(result["created"], 3)
+		self.assertEqual(result["updated"], 0)
+		self.assertEqual(result["errors"], [])
+		self.assertEqual(len(result["new_accounts"]), 3)
 		self.assertEqual(Client.objects.count(), 3)
 		self.assertEqual(Shipment.objects.count(), 3)
 

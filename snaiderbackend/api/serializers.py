@@ -30,6 +30,35 @@ class ShipmentPublicSerializer(serializers.ModelSerializer[Shipment]):
         ]
 
 
+class ClientAdminSerializer(serializers.ModelSerializer[Client]):
+    class Meta:
+        model = Client
+        fields = ["id", "dni_cuit", "name", "created_at", "updated_at"]
+
+
+class ShipmentAdminSerializer(serializers.ModelSerializer[Shipment]):
+    recipient = ClientPublicSerializer(read_only=True)
+
+    class Meta:
+        model = Shipment
+        fields = [
+            "id",
+            "remito_number",
+            "sender",
+            "recipient",
+            "deposit_number",
+            "logistics_id",
+            "packages",
+            "weight_kg",
+            "declared_value",
+            "value_type",
+            "received_datetime",
+            "observations",
+            "created_at",
+            "updated_at",
+        ]
+
+
 class FileUploadSerializer(serializers.Serializer[dict[str, Any]]):
     """Serializador para validar el archivo subido por el admin."""
 

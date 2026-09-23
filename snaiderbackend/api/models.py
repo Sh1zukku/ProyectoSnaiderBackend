@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 from django.core.validators import MinValueValidator, RegexValidator
 
@@ -24,6 +25,12 @@ class Client(models.Model):
         max_length=255,
         verbose_name="Nombre / Razón Social"
     )
+    password_hash = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        verbose_name="Contraseña cifrada",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -35,6 +42,12 @@ class Client(models.Model):
     def __str__(self) -> str:
         return f"{str(self.name)} ({str(self.dni_cuit)})"
 
+    def set_password(self, raw_password: str) -> None:
+        self.password_hash = make_password(raw_password)
+
+    def check_password(self, raw_password: str) -> bool:
+        return check_password(raw_password, self.password_hash)
+
 
 class Shipment(models.Model):
     """
@@ -43,7 +56,6 @@ class Shipment(models.Model):
     # Identificación única del remito
     remito_number = models.CharField(
         max_length=50,
-        unique=True,
         db_index=True,
         verbose_name="N° de Remito"
     )
