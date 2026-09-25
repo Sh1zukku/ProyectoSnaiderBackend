@@ -1,6 +1,9 @@
 from typing import Any, cast
 
+from datetime import timedelta
+
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -9,6 +12,7 @@ from rest_framework.throttling import AnonRateThrottle
 from .models import Client, Shipment
 from .serializers import (
     ClientAdminSerializer,
+    DeleteOldShipmentsSerializer,
     FileUploadSerializer,
     ShipmentAdminSerializer,
     ShipmentPublicSerializer,
@@ -30,8 +34,8 @@ class ClientShipmentSearchView(APIView):
     throttle_classes = [ClientSearchThrottle]
 
     def post(self, request: Request):
-        dni_cuit = str(request.data.get('dni_cuit', '')).strip()
-        password = str(request.data.get('password', ''))
+        dni_cuit = str(request.data.get('dni_cuit', '')).strip() # type: ignore
+        password = str(request.data.get('password', '')) # type: ignore
 
         if not dni_cuit or not password:
             return Response(
@@ -68,9 +72,9 @@ class ClientChangePasswordView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request: Request) -> Response:
-        dni_cuit = str(request.data.get('dni_cuit', '')).strip()
-        current_password = str(request.data.get('current_password', ''))
-        new_password = str(request.data.get('new_password', ''))
+        dni_cuit = str(request.data.get('dni_cuit', '')).strip() # type: ignore
+        current_password = str(request.data.get('current_password', '')) # type: ignore
+        new_password = str(request.data.get('new_password', '')) # type: ignore
 
         if not dni_cuit or not current_password or not new_password:
             return Response(
@@ -117,7 +121,7 @@ class AdminUploadTxtView(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        errors: Any = cast(Any, serializer.errors)
+        errors: Any = cast(Any, serializer.errors) # type: ignore
         return Response(
             errors,
             status=status.HTTP_400_BAD_REQUEST,
@@ -133,8 +137,8 @@ class AdminRegenerateClientPasswordView(APIView):
         client.set_password(password)
         client.save(update_fields=["password_hash", "updated_at"])
         return Response({
-            "dni_cuit": client.dni_cuit,
-            "name": client.name,
+            "dni_cuit": client.dni_cuit, # type: ignore
+            "name": client.name, # type: ignore
             "password": password,
         })
 
@@ -147,7 +151,7 @@ class AdminClientListView(APIView):
         serializer = ClientAdminSerializer(clients, many=True)
         return Response({
             "count": clients.count(),
-            "results": serializer.data,
+            "results": serializer.data, # type: ignore
         })
 
 
@@ -160,5 +164,24 @@ class AdminShipmentListView(APIView):
         serializer = ShipmentAdminSerializer(shipments, many=True)
         return Response({
             "count": shipments.count(),
-            "results": serializer.data,
+            "results": serializer.data, # type: ignore
+        })
+
+
+class AdminDeleteOldShipmentsView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request: Request) -> Response:
+        serializer = DeleteOldShipmentsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        days = serializer.validated_data["days"]
+        cutoff = timezone.now() - timedelta(days=days)
+        deleted_count, _ = Shipment.objects.filter(created_at__lt=cutoff).delete()
+
+        return Response({
+            "message": "Shipments antiguos eliminados correctamente.",
+            "days": days,
+            "cutoff": cutoff,
+            "deleted_count": deleted_count,
         })

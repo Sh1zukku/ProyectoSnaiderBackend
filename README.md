@@ -24,7 +24,7 @@ POSTGRES_DB=
 POSTGRES_USER=
 POSTGRES_PASSWORD=
 DB_HOST=db
-DB_PORT=
+DB_PORT=5432
 ```
 
 > Importante: `DB_HOST` debe ser `db` porque ese es el nombre del servicio PostgreSQL en `docker-compose.yaml`.
@@ -106,9 +106,9 @@ docker compose down -v
 Verificá que en el `.env` existan estas variables:
 
 ```env
-POSTGRES_DB=snaider_db
-POSTGRES_USER=snaider_user
-POSTGRES_PASSWORD=snaider_password
+POSTGRES_DB=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
 DB_HOST=db
 DB_PORT=5432
 ```
@@ -139,5 +139,19 @@ http://localhost:8000
 ```
 
 El proyecto tiene rutas específicas, se acceden en función de la configuración de `urls.py`.
+
+### Eliminación manual de shipments antiguos
+
+Un administrador autenticado puede eliminar los shipments cargados hace más de una cantidad de días definida en el momento:
+
+```http
+POST /api/admin/shipments/delete-old/
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{"days": 30}
+```
+
+La respuesta incluye `deleted_count` con la cantidad eliminada. El usuario debe ser administrador (`is_staff` o `is_superuser`); los valores menores que 1 son rechazados.
 
 

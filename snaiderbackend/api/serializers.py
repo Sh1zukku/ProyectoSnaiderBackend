@@ -70,3 +70,9 @@ class FileUploadSerializer(serializers.Serializer[dict[str, Any]]):
                 "Solo se permiten archivos de texto (.txt)."
             )
         return value
+
+
+class DeleteOldShipmentsSerializer(serializers.Serializer[dict[str, Any]]):
+    """Valida la antigüedad mínima para borrar shipments."""
+
+    days = serializers.IntegerField(min_value=1)

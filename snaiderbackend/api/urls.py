@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     AdminClientListView,
+    AdminDeleteOldShipmentsView,
     AdminRegenerateClientPasswordView,
     AdminShipmentListView,
     AdminUploadTxtView,
@@ -25,6 +26,11 @@ urlpatterns = [
     path('admin/upload-txt/', AdminUploadTxtView.as_view(), name='admin-upload-txt'),
     path('admin/clients/', AdminClientListView.as_view(), name='admin-client-list'),
     path('admin/shipments/', AdminShipmentListView.as_view(), name='admin-shipment-list'),
+    path(
+        'admin/shipments/delete-old/',
+        AdminDeleteOldShipmentsView.as_view(),
+        name='admin-delete-old-shipments',
+    ),
     path(
         'admin/clients/<int:client_id>/regenerate-password/',
         AdminRegenerateClientPasswordView.as_view(),

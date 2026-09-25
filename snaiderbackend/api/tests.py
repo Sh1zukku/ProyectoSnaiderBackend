@@ -1,7 +1,11 @@
 from io import BytesIO
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Any, cast
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
+from rest_framework.test import APIClient
 
 from .models import Client, Shipment
 from .services import process_shipments_txt
@@ -71,5 +75,76 @@ class ProcessShipmentsTxtTests(TestCase):
 		dangerous_shipment: Any = Shipment.objects.get(remito_number="50000")
 		self.assertEqual(dangerous_shipment.value_type, "X-Carga")
 		self.assertEqual(dangerous_shipment.observations, "X-Carga Peligrosa")
+
+
+class AdminDeleteOldShipmentsTests(TestCase):
+	def setUp(self):
+		self.client_api = APIClient()
+		user_model = cast(Any, get_user_model())
+		self.admin = user_model.objects.create_superuser(
+			username="admin",
+			password="admin-password",
+			email="admin@example.com",
+		)
+		self.recipient = Client.objects.create(
+			dni_cuit="24349012",
+			name="Cliente de prueba",
+		)
+
+	def create_shipment(self, created_at: datetime) -> Shipment:
+		shipment = Shipment.objects.create(
+			remito_number=f"R-{created_at.timestamp()}",
+			sender="Remitente",
+			recipient=self.recipient,
+			deposit_number="06",
+			received_datetime=created_at,
+			created_at=created_at,
+		)
+		Shipment.objects.filter(pk=shipment.pk).update(created_at=created_at)
+		return shipment
+
+	def test_admin_deletes_shipments_older_than_requested_days(self):
+		now = timezone.now()
+		old_shipment = self.create_shipment(now - timedelta(days=8))
+		recent_shipment = self.create_shipment(now - timedelta(days=2))
+		self.client_api.force_authenticate(user=self.admin)
+
+		response = self.client_api.post(
+			"/api/admin/shipments/delete-old/",
+			{"days": 7},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["deleted_count"], 1)
+		self.assertFalse(Shipment.objects.filter(pk=old_shipment.pk).exists())
+		self.assertTrue(Shipment.objects.filter(pk=recent_shipment.pk).exists())
+
+	def test_days_must_be_positive(self):
+		self.client_api.force_authenticate(user=self.admin)
+
+		response = self.client_api.post(
+			"/api/admin/shipments/delete-old/",
+			{"days": 0},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 400)
+
+	def test_non_admin_cannot_delete_shipments(self):
+		user_model = cast(Any, get_user_model())
+		user = user_model.objects.create_user(
+			username="user",
+			password="user-password",
+		)
+		self.client_api.force_authenticate(user=user)
+
+		response = self.client_api.post(
+			"/api/admin/shipments/delete-old/",
+			{"days": 7},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 403)
 
 # Create your tests here.

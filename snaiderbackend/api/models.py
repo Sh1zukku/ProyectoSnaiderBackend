@@ -40,13 +40,13 @@ class Client(models.Model):
         ordering = ['name']
 
     def __str__(self) -> str:
-        return f"{str(self.name)} ({str(self.dni_cuit)})"
+        return f"{str(self.name)} ({str(self.dni_cuit)})" # type: ignore
 
     def set_password(self, raw_password: str) -> None:
         self.password_hash = make_password(raw_password)
 
     def check_password(self, raw_password: str) -> bool:
-        return check_password(raw_password, self.password_hash)
+        return check_password(raw_password, self.password_hash) # type: ignore
 
 
 class Shipment(models.Model):
@@ -129,4 +129,4 @@ class Shipment(models.Model):
         ordering = ['-received_datetime']
 
     def __str__(self):
-        return f"Remito #{self.remito_number} - {self.recipient.name}"
+        return f"Remito #{self.remito_number} - {self.recipient.name}" # type: ignore
