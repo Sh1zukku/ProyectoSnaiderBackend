@@ -9,7 +9,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.request import Request
 from rest_framework.throttling import AnonRateThrottle
+from rest_framework_simplejwt.tokens import RefreshToken
+from .authentication import ClientJWTAuthentication
 from .models import Client, Shipment
+from .permissions import IsAuthenticatedClient
 from .serializers import (
     ClientAdminSerializer,
     DeleteOldShipmentsSerializer,
@@ -21,38 +24,47 @@ from .services import generate_client_password, process_shipments_txt
 
 
 class ClientSearchThrottle(AnonRateThrottle):
-    """Limita a los clientes a 10 consultas por minuto por dirección IP"""
+    """Limita los intentos de inicio de sesión por dirección IP."""
     rate = '10/minute'
+
+
+class ClientTokenObtainView(APIView):
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [ClientSearchThrottle]
+
+    def post(self, request: Request) -> Response:
+        dni_cuit = str(request.data.get('dni_cuit', '')).strip() # type: ignore
+        password = str(request.data.get('password', '')) # type: ignore
+        client = Client.objects.filter(dni_cuit=dni_cuit).first()
+
+        if client is None or not client.check_password(password):
+            return Response(
+                {"error": "DNI/CUIT o contraseña incorrectos."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        refresh = RefreshToken()
+        refresh["client_id"] = client.pk
+        refresh["user_type"] = "client"
+        return Response({
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+        })
 
 
 class ClientShipmentSearchView(APIView):
     """
-    Endpoint PÚBLICO para que el cliente consulte sus remitos por DNI/CUIT.
-    GET /api/v1/shipments/search/?dni_cuit=43235050
+    Endpoint protegido para que el cliente consulte sus propios remitos.
     """
-    permission_classes = [permissions.AllowAny]
-    throttle_classes = [ClientSearchThrottle]
+    authentication_classes = [ClientJWTAuthentication]
+    permission_classes = [IsAuthenticatedClient]
 
-    def post(self, request: Request):
-        dni_cuit = str(request.data.get('dni_cuit', '')).strip() # type: ignore
-        password = str(request.data.get('password', '')) # type: ignore
-
-        if not dni_cuit or not password:
-            return Response(
-                {"error": "Debe proporcionar CUIT/DNI y contraseña."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        client = get_object_or_404(Client, dni_cuit=dni_cuit)
-        if not client.check_password(password):
-            return Response(
-                {"error": "CUIT/DNI o contraseña incorrectos."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
+    def get(self, request: Request) -> Response:
+        client = cast(Client, request.user)
         # Búsqueda optimizada aprovechando la relación e índice
         shipments = Shipment.objects.filter(
-            recipient__dni_cuit=dni_cuit
+            recipient=client
         ).select_related('recipient').order_by('-received_datetime')
 
         serializer = ShipmentPublicSerializer(shipments, many=True)
@@ -69,16 +81,16 @@ class ClientShipmentSearchView(APIView):
 
 
 class ClientChangePasswordView(APIView):
-    permission_classes = [permissions.AllowAny]
+    authentication_classes = [ClientJWTAuthentication]
+    permission_classes = [IsAuthenticatedClient]
 
     def post(self, request: Request) -> Response:
-        dni_cuit = str(request.data.get('dni_cuit', '')).strip() # type: ignore
         current_password = str(request.data.get('current_password', '')) # type: ignore
         new_password = str(request.data.get('new_password', '')) # type: ignore
 
-        if not dni_cuit or not current_password or not new_password:
+        if not current_password or not new_password:
             return Response(
-                {"error": "Debe proporcionar CUIT/DNI, contraseña actual y nueva."},
+                {"error": "Debe proporcionar la contraseña actual y la nueva."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if len(new_password) < 8:
@@ -87,7 +99,7 @@ class ClientChangePasswordView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        client = get_object_or_404(Client, dni_cuit=dni_cuit)
+        client = cast(Client, request.user)
         if not client.check_password(current_password):
             return Response(
                 {"error": "La contraseña actual es incorrecta."},

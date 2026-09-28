@@ -147,4 +147,61 @@ class AdminDeleteOldShipmentsTests(TestCase):
 
 		self.assertEqual(response.status_code, 403)
 
+
+class ClientJWTAuthenticationTests(TestCase):
+	def setUp(self):
+		self.client_api = APIClient()
+		self.client_account = Client.objects.create(
+			dni_cuit="24349012",
+			name="Cliente de prueba",
+		)
+		self.client_account.set_password("cliente-password")
+		self.client_account.save()
+		self.other_client = Client.objects.create(
+			dni_cuit="23452342",
+			name="Otro cliente",
+		)
+		self.create_shipment(self.client_account, "R-CLIENTE")
+		self.create_shipment(self.other_client, "R-OTRO")
+
+	def create_shipment(self, recipient: Client, remito_number: str) -> None:
+		Shipment.objects.create(
+			remito_number=remito_number,
+			sender="Remitente",
+			recipient=recipient,
+			deposit_number="06",
+			received_datetime=timezone.now(),
+		)
+
+	def test_client_can_only_fetch_shipments_with_its_access_token(self):
+		login_response = self.client_api.post(
+			"/api/auth/client/token/",
+			{"dni_cuit": "24349012", "password": "cliente-password"},
+			format="json",
+		)
+		self.assertEqual(login_response.status_code, 200)
+
+		self.client_api.credentials(
+			HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}"
+		)
+		response = self.client_api.get("/api/shipments/search/")
+
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.data["count"], 1)
+		self.assertEqual(response.data["results"][0]["remito_number"], "R-CLIENTE")
+
+	def test_shipment_search_requires_a_client_token(self):
+		response = self.client_api.get("/api/shipments/search/")
+
+		self.assertEqual(response.status_code, 401)
+
+	def test_client_login_rejects_invalid_password(self):
+		response = self.client_api.post(
+			"/api/auth/client/token/",
+			{"dni_cuit": "24349012", "password": "incorrecta"},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 401)
+
 # Create your tests here.
