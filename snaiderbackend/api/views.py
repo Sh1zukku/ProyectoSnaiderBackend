@@ -125,10 +125,21 @@ class AdminUploadTxtView(APIView):
             uploaded_file = serializer.validated_data["file"]
             result = process_shipments_txt(uploaded_file)
 
+            details = cast(Any, result)
+            skipped = int(details.get("skipped_duplicates", 0) or 0)
+            created = int(details.get("created", 0) or 0)
+
+            message = "Archivo procesado con éxito."
+            if skipped:
+                message = (
+                    f"Archivo procesado con éxito: {created} envíos creados, "
+                    f"{skipped} duplicados omitidos."
+                )
+
             return Response(
                 {
-                    "message": "Archivo procesado con éxito.",
-                    "details": result,
+                    "message": message,
+                    "details": details,
                 },
                 status=status.HTTP_200_OK,
             )

@@ -1,8 +1,12 @@
+from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
+from django.db.models import UniqueConstraint
 from django.core.validators import MinValueValidator, RegexValidator
+from django.utils.timezone import get_current_timezone, is_naive, make_aware
 
 # Create your models here.
 class Client(models.Model):
@@ -113,6 +117,11 @@ class Shipment(models.Model):
     received_datetime = models.DateTimeField(
         verbose_name="Fecha y Hora de Recibido"
     )
+    received_date = models.DateField(
+        editable=False,
+        verbose_name="Fecha de Recibido (derivada)",
+        help_text="Se deriva de received_datetime y forma parte de la clave única.",
+    )
     observations = models.TextField(
         blank=True,
         null=True,
@@ -127,6 +136,31 @@ class Shipment(models.Model):
         verbose_name = "Despacho / Remito"
         verbose_name_plural = "Despachos / Remitos"
         ordering = ['-received_datetime']
+        constraints = [
+            UniqueConstraint(
+                fields=["remito_number", "recipient", "received_date"],
+                name="uniq_shipment_remito_recipient_date",
+            ),
+        ]
 
     def __str__(self):
         return f"Remito #{self.remito_number} - {self.recipient.name}" # type: ignore
+
+    @staticmethod
+    def resolve_received_date(value: datetime) -> date:
+        """
+        Reduce un instante a la fecha de negocio en la zona horaria activa.
+
+        Es la única fuente de verdad para la clave de duplicados. Antes esta fecha
+        se recalculaba en cada consulta, de modo que el mismo TXT podía generar
+        claves distintas según la zona horaria activa en el momento de leer.
+        """
+        tz = get_current_timezone()
+        if is_naive(value):
+            value = make_aware(value, tz)
+        return value.astimezone(tz).date()
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if self.received_datetime is not None:
+            self.received_date = self.resolve_received_date(self.received_datetime)
+        super().save(*args, **kwargs)

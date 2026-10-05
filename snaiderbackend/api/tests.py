@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -32,6 +33,7 @@ class ProcessShipmentsTxtTests(TestCase):
 
 		self.assertEqual(result["created"], 3)
 		self.assertEqual(result["updated"], 0)
+		self.assertEqual(result["skipped_duplicates"], 1)
 		self.assertEqual(result["errors"], [])
 		self.assertEqual(len(result["new_accounts"]), 2)
 		self.assertEqual(Shipment.objects.count(), 3)
@@ -57,6 +59,7 @@ class ProcessShipmentsTxtTests(TestCase):
 
 		self.assertEqual(result["created"], 3)
 		self.assertEqual(result["updated"], 0)
+		self.assertEqual(result["skipped_duplicates"], 0)
 		self.assertEqual(result["errors"], [])
 		self.assertEqual(len(result["new_accounts"]), 3)
 		self.assertEqual(Client.objects.count(), 3)
@@ -75,6 +78,103 @@ class ProcessShipmentsTxtTests(TestCase):
 		dangerous_shipment: Any = Shipment.objects.get(remito_number="50000")
 		self.assertEqual(dangerous_shipment.value_type, "X-Carga")
 		self.assertEqual(dangerous_shipment.observations, "X-Carga Peligrosa")
+
+
+class ShipmentDuplicateControlTests(TestCase):
+	ONE_ROW = (
+		"10001 REMITENTE                    DESTINATARIO UNO            "
+		"06 RESISTENCIA          1      1.00       100.00 N                    "
+		"                    20/08/2026 10:00  1  24349012"
+	).encode("utf-8")
+
+	def test_reuploading_the_same_file_creates_nothing(self):
+		first = process_shipments_txt(BytesIO(self.ONE_ROW))
+		self.assertEqual(first["created"], 1)
+
+		second = process_shipments_txt(BytesIO(self.ONE_ROW))
+
+		self.assertEqual(second["created"], 0)
+		self.assertEqual(second["skipped_duplicates"], 1)
+		self.assertEqual(second["errors"], [])
+		self.assertEqual(second["new_accounts"], [])
+		self.assertEqual(Shipment.objects.count(), 1)
+		self.assertEqual(Client.objects.count(), 1)
+
+	def test_remito_with_extra_whitespace_is_still_a_duplicate(self):
+		process_shipments_txt(BytesIO(self.ONE_ROW))
+
+		padded = self.ONE_ROW.replace(b"10001", b"10001 ")
+
+		result = process_shipments_txt(BytesIO(padded))
+
+		self.assertEqual(result["created"], 0)
+		self.assertEqual(result["skipped_duplicates"], 1)
+		self.assertEqual(Shipment.objects.count(), 1)
+
+	def test_same_remito_for_two_recipients_is_allowed(self):
+		second_row = (
+			"10001 REMITENTE                    DESTINATARIO DOS            "
+			"06 RESISTENCIA          1      1.00       100.00 N                    "
+			"                    20/08/2026 12:00  1  23452342"
+		).encode("utf-8")
+
+		result = process_shipments_txt(BytesIO(self.ONE_ROW + b"\n" + second_row))
+
+		self.assertEqual(result["created"], 2)
+		self.assertEqual(result["skipped_duplicates"], 0)
+		self.assertEqual(Shipment.objects.filter(remito_number="10001").count(), 2)
+
+	def test_same_remito_on_another_day_is_allowed(self):
+		other_day = self.ONE_ROW.replace(b"20/08/2026", b"21/08/2026")
+
+		result = process_shipments_txt(BytesIO(self.ONE_ROW + b"\n" + other_day))
+
+		self.assertEqual(result["created"], 2)
+		self.assertEqual(Shipment.objects.filter(remito_number="10001").count(), 2)
+
+	def test_database_rejects_a_duplicate_of_the_same_key(self):
+		process_shipments_txt(BytesIO(self.ONE_ROW))
+		existing: Any = Shipment.objects.get()
+
+		duplicate = Shipment(
+			remito_number=existing.remito_number,
+			sender="OTRO REMITENTE",
+			recipient=existing.recipient,
+			deposit_number="06",
+			received_datetime=existing.received_datetime,
+		)
+
+		with self.assertRaises(IntegrityError):
+			duplicate.save()
+
+	def test_received_date_is_derived_from_received_datetime(self):
+		result = process_shipments_txt(BytesIO(self.ONE_ROW))
+		self.assertEqual(result["created"], 1)
+
+		shipment: Any = Shipment.objects.get()
+
+		self.assertEqual(
+			shipment.received_date,
+			shipment.received_datetime.date(),
+		)
+		self.assertEqual(
+			shipment.received_date,
+			Shipment.resolve_received_date(shipment.received_datetime),
+		)
+
+	def test_shipments_created_outside_the_service_get_a_received_date(self):
+		client = Client.objects.create(dni_cuit="24349012", name="Cliente de prueba")
+
+		Shipment.objects.create(
+			remito_number="99999",
+			sender="Remitente",
+			recipient=client,
+			deposit_number="06",
+			received_datetime=timezone.now(),
+		)
+
+		shipment: Any = Shipment.objects.get(remito_number="99999")
+		self.assertIsNotNone(shipment.received_date)
 
 
 class AdminDeleteOldShipmentsTests(TestCase):
